@@ -4,5 +4,5 @@ import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
 
 export const stateAnnotation=Annotation.Root({
     ...MessagesAnnotation.spec,//it represent message (all the message history)
-    nextRepresentive:Annotation<String>//here we are storing custome state
+    nextRepresentative:Annotation<String>//here we are storing custome state
 })

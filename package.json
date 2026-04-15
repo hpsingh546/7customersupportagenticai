@@ -14,6 +14,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@langchain/core": "^1.1.40",
     "@langchain/groq": "^1.2.0",
     "@langchain/langgraph": "^1.2.8"
   }
