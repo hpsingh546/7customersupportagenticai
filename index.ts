@@ -1,9 +1,10 @@
-import { END, StateGraph } from "@langchain/langgraph";
+import { END, MemorySaver, StateGraph } from "@langchain/langgraph";
 import { stateAnnotation } from "./src/state.ts";
 import { model } from "./src/model.ts";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { getOffers, knowledgebaseRetriverTool } from "./src/tools.ts";
 import type { AIMessage } from "@langchain/core/messages";
+import readline from "node:readline/promises";
 
 const marketingTools = [getOffers];
 const marketingToolNode = new ToolNode(marketingTools);
@@ -167,24 +168,32 @@ const graph = new StateGraph(stateAnnotation)
 
     
 
-const app = graph.compile();
+const app = graph.compile({checkpointer:new MemorySaver()});
 // invoke
 
 async function main() {
-  const stream = await app.stream({
+   const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  while (true) {
+    const ques = await rl.question("You:");
+
+    if (ques == "bye") break;
+    //retrival
+    const result = await app.invoke({
     messages: [
       {
         role: "user",
-        content: "gen ai course duration",
+        content: ques,
       },
     ],
-  });
+  },{configurable:{thread_id:'1'}});
 
-  for await (const value of stream) {
-    console.log("----STEP----");
-    console.log(value);
-    console.log("----STEP----");
-  }
+ const message = result.messages;
+   console.log("Ai:", message?.[message.length - 1]?.content);
+}
+rl.close();
 }
 
 main();
