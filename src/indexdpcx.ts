@@ -43,4 +43,4 @@ export async function invoketheDocument(filePath: string) {
   await vectorStore.addDocuments(documents);
   // console.log(documents);
 }
-invoketheDocument("./cg-knowledge-base.pdf")
+// invoketheDocument("./cg-knowledge-base.pdf")

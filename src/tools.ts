@@ -1,4 +1,7 @@
 import { tool } from "@langchain/core/tools";
+    import { createRetrieverTool } from "@langchain/classic/tools/retriever";
+import { vectorStore } from "./indexdpcx";
+
 // Define tools
 export const getOffers = tool(
     () => {
@@ -19,3 +22,13 @@ export const getOffers = tool(
         name: 'offers_query_tool',
         description: 'Call this tool to get the available discounts and offers',
     });
+
+const retriever = vectorStore.asRetriever();
+
+export const knowledgebaseRetriverTool = createRetrieverTool(
+  retriever,
+  {
+      name: 'retrieve_learning_knowledge_base',
+    description: 'Search and return information about syllabus, courses, FAQs, career doubts.',
+  },
+);

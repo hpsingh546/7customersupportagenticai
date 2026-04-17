@@ -1,6 +1,15 @@
-import { StateGraph } from "@langchain/langgraph";
+import { END, StateGraph } from "@langchain/langgraph";
 import { stateAnnotation } from "./src/state.ts";
 import { model } from "./src/model.ts";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { getOffers, knowledgebaseRetriverTool } from "./src/tools.ts";
+import type { AIMessage } from "@langchain/core/messages";
+
+const marketingTools = [getOffers];
+const marketingToolNode = new ToolNode(marketingTools);
+
+const learningtools = [knowledgebaseRetriverTool];
+const learningToolNode = new ToolNode(learningtools);
 
 async function frontDeskSupport(state: typeof stateAnnotation.State) {
   const SYSTEM_PROMPT = `You are frontline support staff for Coder’s Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI courses.
@@ -11,7 +20,7 @@ Instead, immediately transfer them to the marketing team(promo codes, discounts,
 Otherwise, just respond conversationally.`; //systen persona
   const supportResponse = await model.invoke([
     { role: "system", content: SYSTEM_PROMPT },
-    ...state.messages, //user message when we invoke our graph then it store inside state inside messages here we passing message history this is array so we spread it
+    ...state.messages, //user message when we invoke our graph then it store inside state inside messages here we passing message history this is array of object(messages) so we spread it
   ]);
   // console.log("support Response=>",supportResponse,typeof supportResponse);
   const CATEGORIZATION_SYSTEM_PROMPT = `You are an expert customer support routing system.
@@ -36,7 +45,7 @@ Otherwise, respond only with the word "RESPOND".`; //{nextRepresentative:"MARKET
         type: "json_object",
       },
     },
-  );
+  );//this llm work is to categorised whether 
   // console.log("categorizationResponse=>",categorizationResponse)
   //role :user we are tricking llm you can think of developer
   const categorizationOutput = JSON.parse(
@@ -48,14 +57,59 @@ Otherwise, respond only with the word "RESPOND".`; //{nextRepresentative:"MARKET
     nextRepresentative: categorizationOutput.nextRepresentative,
   };
 }
-function marketingSupport(state: typeof stateAnnotation.State) {
+async function marketingSupport(state: typeof stateAnnotation.State) {
   console.log("handling by marketing support");
-  return state;
-}
-function learningSupport(state: typeof stateAnnotation.State) {
-  console.log("handling by learning support");
 
-  return state;
+  const llmWithTools = model.bindTools(marketingTools);
+
+    const SYSTEM_PROMPT = `You are part of the Marketing Team at Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI courses.
+You specialize in handling questions about promo codes, discounts, offers, and special campaigns.
+Answer clearly, concisely, and in a friendly manner. For queries outside promotions (course content, learning), politely redirect the student to the correct team.
+Important: Answer only using given context, else say I don't have enough information about it.`;
+
+   let trimmedHistory = state.messages;
+
+    if (trimmedHistory.at(-1)?.getType() === 'ai') {
+        trimmedHistory = trimmedHistory.slice(0, -1); // [1, 2, 3] -> [1, 2]
+    }
+console.log("marketing message",trimmedHistory)
+    const marketingResponse = await llmWithTools.invoke([
+        {
+            role: 'system',
+            content: SYSTEM_PROMPT,
+        },
+        ...trimmedHistory,
+    ]);
+
+    return {
+        messages: [marketingResponse],
+    };
+}
+async function learningSupport(state: typeof stateAnnotation.State) {
+  console.log("handling by learning support");
+  const SYSTEM_PROMPT = `You are part of the Learning Support Team at Coder's Gyan, an ed-tech company that helps software developers excel in their careers through practical web development and Generative AI courses.
+You assist students with questions about available courses, syllabus coverage, learning paths, and study strategies.
+Keep your answers concise, clear, and supportive. Strictly use information from retrived context for answering queries. If the query is about learning issues, politely redirect the student to the respective team.
+Important: Call retrieve_learning_knowledge_base max 3 times if the tool result is not relevant to original query.`;
+
+    let trimmedHistory = state.messages;
+
+    if (trimmedHistory.at(-1)?.getType() === 'ai') {
+        trimmedHistory = trimmedHistory.slice(0, -1); // [1, 2, 3] -> [1, 2]
+    }
+
+    const llmWithTools = model.bindTools(learningtools);
+ const learningResponse = await llmWithTools.invoke([
+        {
+            role: 'system',
+            content: SYSTEM_PROMPT,
+        },
+        ...trimmedHistory,
+    ]);
+
+    return {
+        messages: [learningResponse],
+    };
 }
 
 function whoIsNext(state: typeof stateAnnotation.State) {
@@ -69,19 +123,50 @@ function whoIsNext(state: typeof stateAnnotation.State) {
     return "__end__";
   }
 }
+function isMarketingTool(state: typeof stateAnnotation.State) {
+    const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
 
+    if (lastMessage.tool_calls?.length) {
+        return 'marketingTools';
+    }
+
+    return '__end__';
+}
+function isLearningTool(state: typeof stateAnnotation.State) {
+    const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
+
+    if (lastMessage.tool_calls?.length) {
+        return 'learningTools';
+    }
+
+    return '__end__';
+}
 const graph = new StateGraph(stateAnnotation)
   .addNode("frontDeskSupport", frontDeskSupport)
   .addNode("marketingSupport", marketingSupport)
   .addNode("learningSupport", learningSupport)
+  .addNode('marketingTools', marketingToolNode)
+   .addNode('learningTools', learningToolNode)
+
   .addEdge("__start__", "frontDeskSupport")
   .addConditionalEdges("frontDeskSupport", whoIsNext, {
     marketingSupport: "marketingSupport",
     learningSupport: "learningSupport",
     __end__: "__end__",
   })
-  .addEdge("learningSupport", "__end__")
-  .addEdge("marketingSupport", "__end__");
+   .addConditionalEdges('learningSupport', isLearningTool, {
+        learningTools: 'learningTools',
+        __end__: END,
+    })
+ .addConditionalEdges('marketingSupport', isMarketingTool, {
+        marketingTools: 'marketingTools',
+        __end__: END,
+    })
+      .addEdge("marketingTools","marketingSupport")
+          .addEdge('learningTools', 'learningSupport')
+
+    
+
 const app = graph.compile();
 // invoke
 
@@ -90,7 +175,7 @@ async function main() {
     messages: [
       {
         role: "user",
-        content: "do you have coupon?",
+        content: "gen ai course duration",
       },
     ],
   });
