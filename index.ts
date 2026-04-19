@@ -180,7 +180,7 @@ async function main() {
     const ques = await rl.question("You:");
 
     if (ques == "bye") break;
-    //retrival
+    //retrival check ubuntu
     const result = await app.invoke({
     messages: [
       {
